@@ -1,16 +1,15 @@
-  name: Mi Primer Hola Mundo
-  on: 
-    push:
-      branches:
-        - main
+name: Mi primera automatizacion
+on:
+  push:
+    branches:
+      - main
 
-  jobs:
-    saludar:
-      runs-on: ubuntu-latest
-      
-      steps:
-        - name: Descargar el código
-          uses: actions/checkout@v4
-          
-        - name: Ejecutar saludo en Python
-          run: python3 -c 'print("hola mundo desde GitHub Actions!")'
+jobs:
+  ejecutar-python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Ejecutar script
+        run: python3 main.py
