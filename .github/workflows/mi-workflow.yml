@@ -1,15 +1,19 @@
-name: Mi primera automatizacion
+name: Bot de Vuelos Telegram
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch: 
 
 jobs:
-  ejecutar-python:
+  buscar-y-avisar:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Descargar el codigo
+      - name: Descargar el código
         uses: actions/checkout@v4
+        
+      - name: Instalar librerías desde requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: Ejecutar script
+      - name: Ejecutar script de alertas
         run: python3 main.py
