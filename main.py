@@ -2,78 +2,87 @@ import os
 import requests
 import serpapi
 
-# Así es como Python lee los secretos que GitHub Actions le envía
-# mi_token = os.environ.get("TELEGRAM_TOKEN")
-# mi_chat_id = os.environ.get("CHAT_ID")
+# 🚨 Usa variables de entorno para proteger tus credenciales
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "TU_NUEVO_API_KEY_AQUI")
+BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN", "TU_NUEVO_BOT_TOKEN_AQUI")
+CHAT_ID = os.environ.get("CHAT_ID", "936677439")
 
-
-client = serpapi.Client(api_key="234cb2ff3dc9e3c2e02b1812a48357597810f4f65650a27e55f8847b982e4f37")
+# 1. Configuración de la búsqueda (Ida y Vuelta)
+client = serpapi.Client(api_key=SERPAPI_KEY)
 results = client.search({
   "engine": "google_flights",
   "departure_id": "LIM",
-  "arrival_id": "MAD",
+  "arrival_id": "PUJ",       # Punta Cana
   "currency": "USD",
-  "type": "2",
-  "outbound_date": "2026-07-10"
+  "type": "1",               # 1 = Ida y vuelta
+  "outbound_date": "2027-01-01",
+  "return_date": "2027-01-12"
 })
-best_flights = results["best_flights"]
 
-
-
+best_flights = results.get("best_flights", [])
 vuelos_procesados = []
 
+# 2. Procesamiento y separación de tramos
 for opcion in best_flights:
     precio = opcion.get('price', float('inf'))
+    vuelos = opcion.get('flights', [])
     
-    # Tomamos el primer tramo para el origen/fecha y el último para el destino final
-    primer_vuelo = opcion['flights'][0]
-    ultimo_vuelo = opcion['flights'][-1]
+    ida = []
+    vuelta = []
+    es_vuelta = False
     
-    origen = primer_vuelo['departure_airport']['id']
-    destino = ultimo_vuelo['arrival_airport']['id']
-    fecha_salida = primer_vuelo['departure_airport']['time']
+    # Separamos los vuelos de ida y los de vuelta
+    for f in vuelos:
+        if not es_vuelta:
+            ida.append(f)
+            # Cuando el destino del tramo es Punta Cana, los siguientes vuelos serán el regreso
+            if f['arrival_airport']['id'] == 'PUJ':
+                es_vuelta = True
+        else:
+            vuelta.append(f)
+
+    # Combinamos aerolíneas por trayecto (limitamos a 12 caracteres para mantener la tabla ordenada)
+    aerolineas_ida = " + ".join(list(set([f['airline'] for f in ida])))[:12]
+    aerolineas_vuelta = " + ".join(list(set([f['airline'] for f in vuelta])))[:12]
     
-    # Si hay varias aerolíneas involucradas, las combinamos
-    aerolineas = list(set([f['airline'] for f in opcion['flights']]))
-    aerolinea_str = " + ".join(aerolineas)
-    
+    # Extraemos la hora de salida del primer avión de cada trayecto (cortamos los segundos si los hay)
+    fecha_salida_ida = ida[0]['departure_airport']['time'][:16] if ida else "N/A"
+    fecha_salida_vuelta = vuelta[0]['departure_airport']['time'][:16] if vuelta else "N/A"
+
     vuelos_procesados.append({
-        'aerolinea': aerolinea_str,
         'precio': precio,
-        'fecha': fecha_salida,
-        'origen': origen,
-        'destino': destino
+        'aerolinea_ida': aerolineas_ida,
+        'fecha_ida': fecha_salida_ida,
+        'aerolinea_vuelta': aerolineas_vuelta,
+        'fecha_vuelta': fecha_salida_vuelta
     })
 
-# 2. Ordenamos por precio (de menor a mayor) y tomamos los 3 primeros
+# 3. Ordenamos por precio total de menor a mayor y tomamos los 3 primeros
 top_3_baratos = sorted(vuelos_procesados, key=lambda x: x['precio'])[:3]
 
-# 3. Construimos el reporte guardándolo en la variable REPORTE
-REPORTE = f"{'AEROLÍNEA':<10} | {'PRECIO':<4} | {'FECHA Y HORA':<17} | {'RUTA':<8}\n"
-REPORTE += "-" * 70 + "\n"
+# 4. Construimos el reporte adaptado para Ida y Vuelta
+REPORTE = f"✈️ TOP 3 VUELOS LIMA - PUNTA CANA\n"
+REPORTE += f"{'PRECIO':<6} | {'TRAMO':<5} | {'AEROLÍNEA':<12} | {'FECHA SALIDA'}\n"
+REPORTE += "-" * 50 + "\n"
 
 for v in top_3_baratos:
-    REPORTE += f"{v['aerolinea']:<10} | ${v['precio']:<4} | {v['fecha']:<17} | {v['origen']} -> {v['destino']}\n"
+    # Fila de la Ida
+    REPORTE += f"${v['precio']:<5} | {'IDA':<5} | {v['aerolinea_ida']:<12} | {v['fecha_ida']}\n"
+    # Fila de la Vuelta (dejamos el precio en blanco para indicar que es el mismo paquete)
+    REPORTE += f"{'':<6} | {'VTA':<5} | {v['aerolinea_vuelta']:<12} | {v['fecha_vuelta']}\n"
+    REPORTE += "-" * 50 + "\n"
 
-
-
-import requests
-
+# 5. Envío a Telegram
 def enviar_reporte_telegram(mensaje_texto):
-    # 1. Coloca aquí tus credenciales de Telegram
-    BOT_TOKEN = '8978730220:AAHzDTz1EDDtkXqXVi2JKwJGYhAx7oyvBPI'
-    CHAT_ID = '936677439'
-    
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     
-    # 2. Encerramos el texto en triple comilla invertida para que Telegram 
-    # use una fuente monoespaciada y respete los espacios de la tabla.
+    # El parse_mode MarkdownV2 exige que respetemos el bloque ```text
     mensaje_formateado = f"```text\n{mensaje_texto}\n```"
     
     payload = {
         'chat_id': CHAT_ID,
         'text': mensaje_formateado,
-        'parse_mode': 'MarkdownV2' # Fundamental para que lea el formato de código
+        'parse_mode': 'MarkdownV2' 
     }
     
     try:
